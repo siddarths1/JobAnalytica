@@ -1,0 +1,40 @@
+name: JobAnalytica CI/CD
+
+on:
+  push:
+    branches: [ main, develop, 'feat/**' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm --filter api db:generate
+
+      - name: Build Shared Types
+        run: pnpm --filter @jobanalytica/shared-types build
+
+      - name: Build Backend (NestJS API)
+        run: pnpm --filter api build
+
+      - name: Build Frontend (Next.js 14+)
+        run: pnpm --filter web build

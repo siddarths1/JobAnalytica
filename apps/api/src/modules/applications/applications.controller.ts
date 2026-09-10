@@ -1,37 +1,41 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { ApplicationsService } from './applications.service';
-import { CreateApplicationDto, UpdateApplicationStatusDto } from './dto/application.dto';
+import { CreateApplicationDto, UpdateStatusDto } from './dto/application.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { ApplicationStatus } from '@jobanalytica/shared-types';
 
-@UseGuards(JwtAuthGuard)
 @Controller('applications')
+@UseGuards(JwtAuthGuard)
 export class ApplicationsController {
-  constructor(private readonly appsService: ApplicationsService) {}
+  constructor(private readonly applicationsService: ApplicationsService) {}
 
   @Get()
-  async getApplications(
-    @CurrentUser() user: any,
-    @Query('status') status?: ApplicationStatus,
-  ) {
-    return this.appsService.getUserApplications(user.id, status);
+  async getApplications(@CurrentUser('id') userId: string) {
+    return this.applicationsService.getApplications(userId);
   }
 
   @Post()
   async createApplication(
-    @CurrentUser() user: any,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateApplicationDto,
   ) {
-    return this.appsService.createApplication(user.id, dto);
+    return this.applicationsService.createApplication(userId, dto);
   }
 
   @Patch(':id/status')
   async updateStatus(
-    @CurrentUser() user: any,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: UpdateApplicationStatusDto,
+    @Body() dto: UpdateStatusDto,
   ) {
-    return this.appsService.updateStatus(user.id, id, dto);
+    return this.applicationsService.updateStatus(userId, id, dto);
+  }
+
+  @Delete(':id')
+  async deleteApplication(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    return this.applicationsService.deleteApplication(userId, id);
   }
 }

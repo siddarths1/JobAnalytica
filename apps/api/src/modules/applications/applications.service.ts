@@ -1,81 +1,97 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CreateApplicationDto, UpdateApplicationStatusDto } from './dto/application.dto';
+import { CreateApplicationDto, UpdateStatusDto } from './dto/application.dto';
 import { ApplicationStatus } from '@jobanalytica/shared-types';
 
 @Injectable()
 export class ApplicationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getUserApplications(userId: string, status?: ApplicationStatus) {
+  async getApplications(userId: string) {
     return this.prisma.application.findMany({
-      where: {
-        userId,
-        ...(status ? { status } : {}),
-      },
+      where: { userId },
       include: {
         job: true,
+        events: { orderBy: { eventTime: 'desc' } },
       },
       orderBy: { updatedAt: 'desc' },
     });
   }
 
   async createApplication(userId: string, dto: CreateApplicationDto) {
-    const job = await this.prisma.job.findUnique({
-      where: { id: dto.jobId },
-    });
+    const status = (dto.status as ApplicationStatus) || ApplicationStatus.SAVED;
+    const appliedAt = status === ApplicationStatus.APPLIED ? new Date() : undefined;
 
-    if (!job) {
-      throw new NotFoundException('Job post not found');
-    }
-
-    const existing = await this.prisma.application.findUnique({
+    const application = await this.prisma.application.upsert({
       where: {
         userId_jobId: {
           userId,
           jobId: dto.jobId,
         },
       },
-    });
-
-    if (existing) {
-      throw new BadRequestException('You have already added this job to your tracker');
-    }
-
-    return this.prisma.application.create({
-      data: {
+      create: {
         userId,
         jobId: dto.jobId,
-        status: dto.status || ApplicationStatus.SAVED,
+        status,
+        appliedAt,
         notes: dto.notes,
-        resumeId: dto.resumeId,
-        appliedAt: dto.status === ApplicationStatus.APPLIED ? new Date() : null,
+        events: {
+          create: {
+            toStatus: status,
+            note: dto.notes || 'Initial application created',
+          },
+        },
       },
-      include: {
-        job: true,
+      update: {
+        status,
+        appliedAt: appliedAt || undefined,
+        notes: dto.notes || undefined,
       },
+      include: { job: true },
     });
+
+    return application;
   }
 
-  async updateStatus(userId: string, id: string, dto: UpdateApplicationStatusDto) {
-    const app = await this.prisma.application.findFirst({
-      where: { id, userId },
+  async updateStatus(userId: string, applicationId: string, dto: UpdateStatusDto) {
+    const app = await this.prisma.application.findUnique({
+      where: { id: applicationId },
     });
 
-    if (!app) {
+    if (!app || app.userId !== userId) {
       throw new NotFoundException('Application not found');
     }
 
-    return this.prisma.application.update({
-      where: { id },
+    const updated = await this.prisma.application.update({
+      where: { id: applicationId },
       data: {
-        status: dto.status,
-        notes: dto.notes !== undefined ? dto.notes : app.notes,
+        status: dto.status as ApplicationStatus,
         appliedAt: dto.status === ApplicationStatus.APPLIED && !app.appliedAt ? new Date() : app.appliedAt,
+        events: {
+          create: {
+            fromStatus: app.status,
+            toStatus: dto.status as ApplicationStatus,
+            note: dto.note || `Status transitioned to ${dto.status}`,
+          },
+        },
       },
-      include: {
-        job: true,
-      },
+      include: { job: true },
+    });
+
+    return updated;
+  }
+
+  async deleteApplication(userId: string, applicationId: string) {
+    const app = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!app || app.userId !== userId) {
+      throw new NotFoundException('Application not found');
+    }
+
+    return this.prisma.application.delete({
+      where: { id: applicationId },
     });
   }
 }

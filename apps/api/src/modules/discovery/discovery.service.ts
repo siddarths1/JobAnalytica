@@ -1,66 +1,111 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { INDIA_TOP_TECH_HUBS } from './geo.constants';
-import { TOP_COMPANIES_BY_HUB, TargetCompany } from './company-directory.constants';
-import { AtsResolverService } from './ats-resolver.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { GreenhouseAdapter } from '../../adapters/greenhouse/greenhouse.adapter';
+import { LeverAdapter } from '../../adapters/lever/lever.adapter';
+import { AshbyAdapter } from '../../adapters/ashby/ashby.adapter';
+import { AdzunaAdapter } from '../../adapters/adzuna/adzuna.adapter';
 import { FreshnessValidatorService } from './freshness-validator.service';
-import { JobsService } from '../jobs/jobs.service';
+import { NormalizedJob } from '../../adapters/base/job-source-adapter.interface';
 
 @Injectable()
 export class DiscoveryService {
   private readonly logger = new Logger(DiscoveryService.name);
 
   constructor(
-    private readonly atsResolver: AtsResolverService,
+    private readonly prisma: PrismaService,
+    private readonly greenhouse: GreenhouseAdapter,
+    private readonly lever: LeverAdapter,
+    private readonly ashby: AshbyAdapter,
+    private readonly adzuna: AdzunaAdapter,
     private readonly freshnessValidator: FreshnessValidatorService,
-    private readonly jobsService: JobsService,
   ) {}
 
-  getHubs(country: string = 'India') {
-    return INDIA_TOP_TECH_HUBS;
-  }
+  async runDiscovery() {
+    this.logger.log('Starting automated job discovery across all ATS adapters...');
+    const adapters = [this.greenhouse, this.lever, this.ashby, this.adzuna];
+    let totalDiscovered = 0;
+    let totalInserted = 0;
 
-  getCompanies(hubId?: string, tier?: string): TargetCompany[] {
-    let list = TOP_COMPANIES_BY_HUB;
-    if (hubId && hubId !== 'ALL') {
-      list = list.filter(c => c.hubId === hubId);
-    }
-    if (tier && tier !== 'ALL') {
-      list = list.filter(c => c.tier === tier);
-    }
-    return list;
-  }
-
-  async crawlHubs(userId: string, options: { hubId?: string; tier?: string; limit?: number }) {
-    const targetCompanies = this.getCompanies(options.hubId, options.tier);
-    const limit = options.limit || targetCompanies.length;
-    const selected = targetCompanies.slice(0, limit);
-
-    let totalIngested = 0;
-
-    for (const company of selected) {
+    for (const adapter of adapters) {
+      const info = adapter.getSourceInfo();
       try {
-        const jobs = await this.atsResolver.resolveCompanyJobs(company);
-        for (const j of jobs) {
-          await this.jobsService.ingestJob(j);
-          totalIngested++;
+        const jobs = await adapter.search({});
+        totalDiscovered += jobs.length;
+
+        for (const job of jobs) {
+          const isFresh = await this.freshnessValidator.isJobFresh(job);
+          if (!isFresh) continue;
+
+          await this.upsertJob(job);
+          totalInserted++;
         }
       } catch (err: any) {
-        this.logger.error(`Failed to resolve jobs for ${company.name}: ${err.message}`);
+        this.logger.error(`Error discovering from ${info.name}: ${err.message}`);
       }
     }
 
-    await this.jobsService.generateMatchesForUser(userId);
-
-    return {
-      success: true,
-      hubsProcessed: options.hubId && options.hubId !== 'ALL' ? [options.hubId] : INDIA_TOP_TECH_HUBS.map(h => h.id),
-      companiesCrawled: selected.length,
-      jobsIngested: totalIngested,
-      message: `Crawled ${selected.length} companies across tech hubs. Ingested and scored ${totalIngested} jobs!`,
-    };
+    this.logger.log(`Discovery complete. Found ${totalDiscovered} jobs, persisted ${totalInserted} active postings.`);
+    return { totalDiscovered, totalInserted };
   }
 
-  async validatePostings() {
-    return this.freshnessValidator.validatePostings();
+  private async upsertJob(job: NormalizedJob) {
+    let source = await this.prisma.jobSource.findUnique({
+      where: { code: job.sourceCode },
+    });
+
+    if (!source) {
+      source = await this.prisma.jobSource.create({
+        data: {
+          code: job.sourceCode,
+          name: job.sourceCode.toUpperCase(),
+          isApi: true,
+          isActive: true,
+        },
+      });
+    }
+
+    const externalId = job.externalId || `${job.company}-${job.title}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+
+    return this.prisma.job.upsert({
+      where: {
+        sourceId_externalId: {
+          sourceId: source.id,
+          externalId,
+        },
+      },
+      update: {
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        workMode: job.workMode,
+        employmentType: job.employmentType,
+        minSalary: job.minSalary,
+        maxSalary: job.maxSalary,
+        currency: job.currency,
+        description: job.description,
+        requiredSkills: JSON.stringify(job.requiredSkills || []),
+        minExperience: job.minExperience,
+        primaryApplyUrl: job.applyUrl,
+        updatedAt: new Date(),
+      },
+      create: {
+        sourceId: source.id,
+        externalId,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        workMode: job.workMode,
+        employmentType: job.employmentType,
+        minSalary: job.minSalary,
+        maxSalary: job.maxSalary,
+        currency: job.currency,
+        description: job.description,
+        requiredSkills: JSON.stringify(job.requiredSkills || []),
+        minExperience: job.minExperience,
+        primaryApplyUrl: job.applyUrl,
+        sourceUrl: job.sourceUrl,
+        postedAt: job.postedAt || new Date(),
+      },
+    });
   }
 }

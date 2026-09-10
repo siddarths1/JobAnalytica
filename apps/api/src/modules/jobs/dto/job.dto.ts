@@ -1,18 +1,14 @@
-import { IsString, IsOptional, IsEnum, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsArray, IsEnum, IsNumber, Min } from 'class-validator';
 import { WorkMode, EmploymentType } from '@jobanalytica/shared-types';
 
-export class CustomJobImportDto {
+export class JobQueryDto {
+  @IsOptional()
   @IsString()
-  title: string;
+  query?: string;
 
+  @IsOptional()
   @IsString()
-  company: string;
-
-  @IsString()
-  location: string;
-
-  @IsString()
-  description: string;
+  location?: string;
 
   @IsOptional()
   @IsEnum(WorkMode)
@@ -23,14 +19,16 @@ export class CustomJobImportDto {
   employmentType?: EmploymentType;
 
   @IsOptional()
-  @IsNumber()
-  minSalary?: number;
-
-  @IsOptional()
-  @IsNumber()
-  maxSalary?: number;
-
-  @IsOptional()
   @IsString()
-  applyUrl?: string;
+  resumeId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  limit?: number = 20;
 }

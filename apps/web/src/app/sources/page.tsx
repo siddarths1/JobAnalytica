@@ -1,84 +1,112 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { ApiClient } from '@/lib/api-client';
-
-interface Source {
-  id: string;
-  code: string;
-  name: string;
-  isApi: boolean;
-  isActive: boolean;
-  createdAt: string;
-}
-
-interface SourceHealth {
-  name: string;
-  code: string;
-  status: string;
-  lastChecked: string;
-}
+import { SourceHealthDto } from '@jobanalytica/shared-types';
+import { ShieldCheck, AlertTriangle, XCircle, Clock, Database, Loader2 } from 'lucide-react';
 
 export default function SourcesPage() {
-  const [sources, setSources] = useState<Source[]>([]);
-  const [health, setHealth] = useState<SourceHealth[]>([]);
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
+  const [sources, setSources] = useState<SourceHealthDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [srcs, hlth] = await Promise.all([
-          ApiClient.request<Source[]>('/sources'),
-          ApiClient.request<SourceHealth[]>('/sources/health'),
-        ]);
-        setSources(srcs);
-        setHealth(hlth);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+    if (!authLoading && !user) {
+      router.push('/login');
+      return;
     }
-    load();
-  }, []);
+
+    if (user) {
+      fetchHealth();
+    }
+  }, [user, authLoading, router]);
+
+  const fetchHealth = async () => {
+    try {
+      setLoading(true);
+      const data = await ApiClient.request<SourceHealthDto[]>('/sources/health');
+      setSources(data || []);
+    } catch (err) {
+      console.error('Failed to fetch source health:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading || authLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-4xl mx-auto space-y-8 pb-16">
       <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          Active Job Sources & ATS Health
-        </h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Real-time connector status for Greenhouse, Lever, Ashby, and Adzuna adapters.
+        <h1 className="text-3xl font-bold text-slate-900">Universal Source Health & Observability</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Real-time status, synchronization timestamps, and active job volumes across all integrated adapters.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {health.map((item) => (
-          <div
-            key={item.code}
-            className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between"
-          >
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{item.name}</h3>
-              <p className="text-xs text-slate-500 mt-1">Code: {item.code}</p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Checked: {new Date(item.lastChecked).toLocaleTimeString()}
-              </p>
+        {sources.map((source) => {
+          const isHealthy = source.healthStatus === 'HEALTHY';
+          const isDegraded = source.healthStatus === 'DEGRADED';
+
+          return (
+            <div
+              key={source.id || source.code}
+              className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">{source.name}</h3>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                    isHealthy
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : isDegraded
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}
+                >
+                  {isHealthy ? (
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : isDegraded ? (\r\n                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                  )}
+                  {source.healthStatus}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs pt-2">
+                <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                  <div className="text-slate-500 flex items-center gap-1">
+                    <Database className="w-3.5 h-3.5" />
+                    Active Jobs Ingested
+                  </div>
+                  <div className="text-lg font-bold text-slate-900">{source.activeJobsCount}</div>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                  <div className="text-slate-500 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Last Polled
+                  </div>
+                  <div className="text-xs font-semibold text-slate-800 truncate">
+                    {source.lastPolledAt ? new Date(source.lastPolledAt).toLocaleTimeString() : 'Just now'}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <span
-                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                  item.status === 'HEALTHY'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                }`}
-              >
-                ● {item.status}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

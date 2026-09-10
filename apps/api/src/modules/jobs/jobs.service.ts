@@ -410,6 +410,7 @@ export class JobsService {
         continue;
       }
 
+      // Evaluate job against ALL candidate profiles
       const evaluations = candidateProfiles.map((prof) => {
         const candidateSkills: string[] = JSON.parse(prof.skills || '[]').map((s: string) => s.toLowerCase().trim());
         const candidateRoles: string[] = JSON.parse(prof.targetRoles || '[]').map((r: string) => r.toLowerCase().trim());
@@ -439,6 +440,7 @@ export class JobsService {
         if (preferredWorkModes.includes(job.workMode)) locationScore = 100;
         else if (job.workMode === 'REMOTE') locationScore = 95;
 
+        // Tier alignment bonus
         let tierBonus = 0;
         if (preferredTiers.length > 0 && preferredTiers.includes(job.companyTier)) {
           tierBonus = 5;
@@ -582,7 +584,7 @@ export class JobsService {
     return { success: true, message: 'Custom job evaluated across company tiers and role profiles!' };
   }
 
-  async getUserFeed(userId: string, options?: { tier?: string; hubId?: string }) {
+  async getFeed(userId: string, profileId?: string) {
     const profiles = await this.prisma.candidateProfile.findMany({
       where: { userId },
       select: { id: true, label: true, isPrimary: true },
@@ -596,6 +598,9 @@ export class JobsService {
     }
 
     const whereClause: any = { userId, isIgnored: false };
+    if (profileId && profileId !== 'ALL') {
+      whereClause.profileId = profileId;
+    }
 
     const rawMatches = await this.prisma.jobMatch.findMany({
       where: whereClause,
@@ -615,13 +620,10 @@ export class JobsService {
     const matches: any[] = [];
 
     for (const m of rawMatches) {
-      if (seenJobs.has(m.jobId)) continue;
-      if (options?.tier && options.tier !== 'ALL' && m.job.companyTier !== options.tier) continue;
-      if (options?.hubId && options.hubId !== 'ALL') {
-        const loc = m.job.location.toLowerCase();
-        if (!loc.includes(options.hubId.toLowerCase())) continue;
+      if (!profileId || profileId === 'ALL') {
+        if (seenJobs.has(m.jobId)) continue;
+        seenJobs.add(m.jobId);
       }
-      seenJobs.add(m.jobId);
       matches.push(m);
     }
 

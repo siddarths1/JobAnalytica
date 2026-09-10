@@ -77,7 +77,8 @@ export default function SourcesPage() {
                 >
                   {isHealthy ? (
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  ) : isDegraded ? (\r\n                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  ) : isDegraded ? (
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                   ) : (
                     <XCircle className="w-3.5 h-3.5 text-rose-600" />
                   )}

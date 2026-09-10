@@ -137,7 +137,8 @@ export default function TrackerPage() {
               </div>
 
               <div className="space-y-3 flex-1">
-                {colApps.map((app) => (\r\n                  <div
+                {colApps.map((app) => (
+                  <div
                     key={app.id}
                     className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow transition space-y-3"
                   >

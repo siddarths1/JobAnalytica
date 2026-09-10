@@ -3,13 +3,13 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
-@Controller('users')
 @UseGuards(JwtAuthGuard)
+@Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get('profile')
-  getProfile(@CurrentUser('id') userId: string) {
-    return this.usersService.findById(userId);
+  async getProfile(@CurrentUser() user: any) {
+    return this.usersService.getProfile(user.id);
   }
 }

@@ -1,0 +1,276 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                String             @id @default(uuid())
+  email             String             @unique
+  passwordHash      String
+  fullName          String
+  role              String             @default("USER")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  resumes           Resume[]
+  candidateProfiles CandidateProfile[]
+  preferences       UserPreference?
+  jobMatches        JobMatch[]
+  applications      Application[]
+  emailDigests      EmailDigest[]
+  visualDiscoveryEntries VisualDiscoveryEntry[]
+
+  @@map("users")
+}
+
+model Resume {
+  id           String            @id @default(uuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String            @default("General Resume")
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+  parsedRaw    String?
+  isPrimary    Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  profile      CandidateProfile?
+
+  @@map("resumes")
+}
+
+model CandidateProfile {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId         String?   @unique
+  resume           Resume?   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  label            String    @default("General Profile")
+  totalExperience  Float
+  headline         String?
+  summary          String?
+  targetRoles      String    @default("[]")
+  skills           String    @default("[]")
+  primaryLanguages String    @default("[]")
+  frameworks       String    @default("[]")
+  domains          String    @default("[]")
+  education        String?   @default("[]")
+  workHistory      String?   @default("[]")
+  isPrimary        Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  matches          JobMatch[]
+
+  @@map("candidate_profiles")
+}
+
+model UserPreference {
+  id                 String        @id @default(uuid())
+  userId             String        @unique
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRoles        String        @default("[]")
+  locations          String        @default("[]")
+  workModes          String        @default("[]")
+  preferredTiers     String        @default("[]")
+  minSalary          Int?
+  maxSalary          Int?
+  currency           String        @default("INR")
+  minExperience      Float         @default(0)
+  maxExperience      Float?
+  preferredCompanies String        @default("[]")
+  excludedCompanies  String        @default("[]")
+  enableDailyDigest  Boolean       @default(true)
+  digestTime         String        @default("08:00")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@map("user_preferences")
+}
+
+model JobSource {
+  id                  String             @id @default(uuid())
+  code                String             @unique
+  name                String
+  baseUrl             String?
+  isActive            Boolean            @default(true)
+  config              String?            @default("{}")
+  healthStatus        String             @default("HEALTHY")
+  lastPolledAt        DateTime?
+  lastError           String?
+  consecutiveFailures Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  postings            JobSourcePosting[]
+
+  @@map("job_sources")
+}
+
+model CanonicalJob {
+  id                 String             @id @default(uuid())
+  canonicalHash      String             @unique
+  title              String
+  company            String
+  normalizedTitle    String
+  normalizedCompany  String
+  location           String
+  normalizedLocation String
+  companyTier        String             @default("TIER_2")
+  companyScale       String             @default("MID_MARKET")
+  workMode           String             @default("ONSITE")
+  employmentType     String             @default("FULL_TIME")
+  minSalary          Int?
+  maxSalary          Int?
+  currency           String?
+  description        String
+  requiredSkills     String             @default("[]")
+  experienceLevel    String?
+  minExperience      Float?
+  maxExperience      Float?
+  primaryApplyUrl    String
+  firstSeenAt        DateTime           @default(now())
+  lastSeenAt         DateTime           @default(now())
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  sourcePostings     JobSourcePosting[]
+  matches            JobMatch[]
+  applications       Application[]
+
+  @@index([normalizedCompany, normalizedTitle])
+  @@index([normalizedLocation])
+  @@index([firstSeenAt])
+  @@map("canonical_jobs")
+}
+
+model JobSourcePosting {
+  id             String        @id @default(uuid())
+  canonicalJobId String
+  canonicalJob   CanonicalJob  @relation(fields: [canonicalJobId], references: [id], onDelete: Cascade)
+  sourceId       String
+  source         JobSource     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  externalJobId  String
+  applyUrl       String
+  sourceUrl      String?
+  rawPayload     String?
+  postedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([sourceId, externalJobId])
+  @@index([canonicalJobId])
+  @@map("job_source_postings")
+}
+
+model JobMatch {
+  id                  String              @id @default(uuid())
+  userId              String
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId               String
+  job                 CanonicalJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profileId           String?
+  profile             CandidateProfile?   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  matchedProfileLabel String              @default("General Profile")
+  overallScore        Float
+  skillScore          Float
+  experienceScore     Float
+  roleScore           Float
+  locationScore       Float
+  applicationPriority Float
+  recommendation      String              @default("WORTH_APPLYING")
+  whyApply            String              @default("[]")
+  risksAndGaps        String              @default("[]")
+  verdictReason       String
+  alternateProfiles   String              @default("[]")
+  isViewed            Boolean             @default(false)
+  isIgnored           Boolean             @default(false)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([userId, jobId, profileId])
+  @@index([userId, applicationPriority])
+  @@index([userId, overallScore])
+  @@map("job_matches")
+}
+
+model Application {
+  id             String            @id @default(uuid())
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId          String
+  job            CanonicalJob      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resumeLabel    String?           @default("Primary Resume")
+  status         String            @default("SAVED")
+  appliedAt      DateTime?
+  notes          String?
+  salaryOffered  Int?
+  interviewDate  DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  events         ApplicationEvent[]
+
+  @@unique([userId, jobId])
+  @@index([userId, status])
+  @@map("applications")
+}
+
+model ApplicationEvent {
+  id            String             @id @default(uuid())
+  applicationId String
+  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fromStatus    String?
+  toStatus      String
+  note          String?
+  eventTime     DateTime           @default(now())
+
+  @@map("application_events")
+}
+
+model EmailDigest {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sentAt      DateTime  @default(now())
+  jobCount    Int
+  topJobIds   String    @default("[]")
+  delivered   Boolean   @default(false)
+
+  @@map("email_digests")
+}
+
+model VisualDiscoveryEntry {
+  id                  String            @id @default(uuid())
+  userId              String
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourcePlatform      String            @default("NAUKRI")
+  screenshotUrl       String?
+  extractedCompany    String
+  extractedRole       String?
+  extractedLocation   String?
+  extractedSkills     String            @default("[]")
+  extractedExperience String?
+  rawOcrText          String?
+  careerPageUrl       String?
+  atsProvider         String?
+  status              String            @default("ACTIVE")
+  matchScore          Float?            @default(0)
+  matchedProfileLabel String?
+  isSoftDeleted       Boolean           @default(false)
+  softDeletedAt       DateTime?
+  canonicalJobId      String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([userId, status, isSoftDeleted])
+  @@map("visual_discovery_entries")
+}

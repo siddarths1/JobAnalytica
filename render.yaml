@@ -1,12 +1,20 @@
+databases:
+  # Free Managed PostgreSQL Database on Render (Persistent 24/7, No Disk Required!)
+  - name: jobanalytica-db
+    plan: free
+    region: oregon
+    databaseName: jobanalytica
+    user: jobanalytica_user
+
 services:
-  # Backend API Gateway
+  # 1. Backend API Gateway (NestJS)
   - type: web
     name: jobanalytica-api
     runtime: node
     plan: free
     region: oregon
     rootDir: .
-    buildCommand: pnpm install && pnpm build
+    buildCommand: pnpm install && pnpm --filter @jobanalytica/shared-types build && pnpm --filter api db:push && pnpm --filter api build
     startCommand: pnpm --filter api start:prod
     healthCheckPath: /api/v1/health
     envVars:
@@ -15,7 +23,9 @@ services:
       - key: PORT
         value: 10000
       - key: DATABASE_URL
-        value: file:./data/prod.db
+        fromDatabase:
+          name: jobanalytica-db
+          property: connectionString
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -26,7 +36,23 @@ services:
         value: 60000
       - key: THROTTLE_LIMIT
         value: 100
-    disk:
-      name: api-data
-      mountPath: /app/apps/api/data
-      sizeGB: 1
+
+  # 2. Frontend Web Application (Next.js 14+)
+  - type: web
+    name: jobanalytica-web
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: pnpm install && pnpm --filter @jobanalytica/shared-types build && pnpm --filter web build
+    startCommand: pnpm --filter web start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: jobanalytica-api
+          property: host

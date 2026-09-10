@@ -1,15 +1,22 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import helmet from 'helmet';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
-  const configService = app.get(ConfigService);
 
   app.use(helmet());
+  app.use(cookieParser());
+
+  app.enableCors({
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'https://jobanalytica-web.onrender.com'],
+    credentials: true,
+  });
+
   app.setGlobalPrefix('api/v1');
 
   app.useGlobalPipes(
@@ -20,17 +27,10 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new AllExceptionsFilter());
 
-  const corsOrigin = configService.get<string>('CORS_ORIGIN', '*');
-  app.enableCors({
-    origin: corsOrigin === '*' ? true : corsOrigin.split(','),
-    credentials: true,
-  });
-
-  const port = configService.get<number>('PORT', 4000);
-  await app.listen(port);
-  console.log(`🚀 JobAnalytica API Gateway running on http://localhost:${port}/api/v1`);
+  const port = process.env.PORT || 4000;
+  await app.listen(port, '0.0.0.0');
+  logger.log(`JobAnalytica API server running on port ${port}`);
 }
-
 bootstrap();

@@ -1,12 +1,11 @@
 import {
   Controller,
-  Post,
   Get,
-  Put,
-  Patch,
+  Post,
   Delete,
-  Body,
+  Patch,
   Param,
+  Body,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -15,54 +14,46 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ResumesService } from './resumes.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { UpdateCandidateProfileDto } from './dto/resume.dto';
+import { CreateCandidateProfileDto } from './dto/resume.dto';
 
 @Controller('resumes')
 @UseGuards(JwtAuthGuard)
 export class ResumesController {
   constructor(private readonly resumesService: ResumesService) {}
 
+  @Get()
+  getProfiles(@CurrentUser('id') userId: string) {
+    return this.resumesService.getUserProfiles(userId);
+  }
+
+  @Post('profile')
+  createProfile(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateCandidateProfileDto,
+  ) {
+    return this.resumesService.createCandidateProfile(userId, dto);
+  }
+
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: 5 * 1024 * 1024 },
-  }))
-  async uploadResume(
+  @UseInterceptors(FileInterceptor('file'))
+  uploadResume(
     @CurrentUser('id') userId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('label') label?: string,
   ) {
-    return this.resumesService.uploadAndParsePdf(userId, file, label);
+    return this.resumesService.uploadAndParseResume(userId, file, label);
   }
 
-  @Get()
-  async getResumes(@CurrentUser('id') userId: string) {
-    return this.resumesService.getAllProfiles(userId);
-  }
-
-  @Get('profiles')
-  async getAllProfiles(@CurrentUser('id') userId: string) {
-    return this.resumesService.getAllProfiles(userId);
-  }
-
-  @Patch('profile/:id/primary')
-  async setPrimary(
+  @Patch(':id/primary')
+  setPrimary(
     @CurrentUser('id') userId: string,
     @Param('id') profileId: string,
   ) {
     return this.resumesService.setPrimaryProfile(userId, profileId);
   }
 
-  @Put('profile/:id')
-  async updateProfile(
-    @CurrentUser('id') userId: string,
-    @Param('id') profileId: string,
-    @Body() dto: UpdateCandidateProfileDto,
-  ) {
-    return this.resumesService.updateProfile(userId, profileId, dto);
-  }
-
-  @Delete('profile/:id')
-  async deleteProfile(
+  @Delete(':id')
+  deleteProfile(
     @CurrentUser('id') userId: string,
     @Param('id') profileId: string,
   ) {

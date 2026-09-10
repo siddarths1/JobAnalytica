@@ -1,98 +1,159 @@
-const API_URL = typeof window !== 'undefined'
-  ? '/api/v1'
-  : (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/api/v1');
+import {
+  AuthResponseDto,
+  CandidateProfileDto,
+  JobMatchDto,
+  ApplicationDto,
+  SourceHealthDto,
+  UserPreferenceDto,
+  UserDto,
+} from '@jobanalytica/shared-types';
 
-export class ApiClient {
-  private static getToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('jobanalytica_token');
-  }
+const API_BASE = '/api/v1';
 
-  static setToken(token: string) {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('jobanalytica_token', token);
-    }
-  }
-
-  static clearToken() {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('jobanalytica_token');
-      localStorage.removeItem('jobanalytica_user');
-    }
-  }
-
-  static async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const token = this.getToken();
-    const headers: Record<string, string> = {};
-
-    if (!(options.body instanceof FormData)) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    if (options.headers) {
-      Object.assign(headers, options.headers);
-    }
-
-    if (token) {
-      headers['Authorization'] = 'Bearer ' + token;
-    }
-
-    const response = await fetch(API_URL + endpoint, {
-      ...options,
-      headers,
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.message || 'An error occurred while processing the request.');
-    }
-
-    return data as T;
-  }
-
-  // Visual Discovery API helpers
-  static async uploadVisualScreenshot(formData: FormData) {
-    return this.request<{ success: boolean; entry: any; match: any }>('/discovery/visual/upload', {
-      method: 'POST',
-      body: formData,
-    });
-  }
-
-  static async uploadVisualBase64(base64Image: string, mimeType: string) {
-    return this.request<{ success: boolean; entry: any; match: any }>('/discovery/visual/upload', {
-      method: 'POST',
-      body: JSON.stringify({ base64Image, mimeType }),
-    });
-  }
-
-  static async uploadVisualText(rawText: string, platform: 'NAUKRI' | 'LINKEDIN' | 'OTHER' = 'NAUKRI') {
-    return this.request<{ success: boolean; entry: any; match: any }>('/discovery/visual/upload', {
-      method: 'POST',
-      body: JSON.stringify({ rawText, platform }),
-    });
-  }
-
-  static async getVisualDiscoveries(filter: 'ACTIVE' | 'ARCHIVED' | 'ALL' = 'ACTIVE') {
-    return this.request<{ success: boolean; count: number; entries: any[] }>(`/discovery/visual?filter=${filter}`);
-  }
-
-  static async updateVisualDiscoveryStatus(id: string, status: 'APPLIED' | 'DONE' | 'DISMISSED' | 'ACTIVE') {
-    return this.request<{ success: boolean; entry: any; message: string }>(`/discovery/visual/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-  }
-
-  static async restoreVisualDiscovery(id: string) {
-    return this.request<{ success: boolean; entry: any; message: string }>(`/discovery/visual/${id}/restore`, {
-      method: 'POST',
-    });
-  }
-
-  static async deleteVisualDiscovery(id: string) {
-    return this.request<{ success: boolean; message: string }>(`/discovery/visual/${id}`, {
-      method: 'DELETE',
-    });
-  }
+function authHeader() {
+  if (typeof window === 'undefined') return {};
+  const token = localStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeader(),
+      ...options.headers,
+    },
+  });
+
+  if (!res.ok) {
+    let errorMsg = 'An unexpected error occurred';
+    try {
+      const errorData = await res.json();
+      errorMsg = errorData.message || errorMsg;
+    } catch {}
+    throw new Error(errorMsg);
+  }
+
+  return res.json();
+}
+
+// Auth
+export const registerUser = (email: string, pass: string, fullName: string) =>
+  request<AuthResponseDto>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password: pass, fullName }),
+  });
+
+export const loginUser = (email: string, pass: string) =>
+  request<AuthResponseDto>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password: pass }),
+  });
+
+export const getMe = () => request<UserDto>('/auth/me');
+
+// Profiles / Resumes
+export const getCandidateProfiles = () => request<CandidateProfileDto[]>('/resumes');
+
+export const createCandidateProfile = (data: {
+  label: string;
+  totalExperience: number;
+  headline?: string;
+  summary?: string;
+  targetRoles: string[];
+  skills: string[];
+  primaryLanguages?: string[];
+  frameworks?: string[];
+  domains?: string[];
+  isPrimary?: boolean;
+}) =>
+  request<CandidateProfileDto>('/resumes/profile', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const deleteCandidateProfile = (id: string) =>
+  request<{ success: boolean }>(`/resumes/${id}`, { method: 'DELETE' });
+
+export const setPrimaryProfile = (id: string) =>
+  request<CandidateProfileDto>(`/resumes/${id}/primary`, { method: 'PATCH' });
+
+// Jobs & Matching Feed
+export const getJobFeed = (params?: { tier?: string; hubId?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.tier && params.tier !== 'ALL') q.set('tier', params.tier);
+  if (params?.hubId && params.hubId !== 'ALL') q.set('hubId', params.hubId);
+  return request<{ matches: JobMatchDto[]; total: number }>(`/jobs/feed?${q.toString()}`);
+};
+
+export const recalculateMatches = () => request<{ success: boolean; totalMatches: number }>('/jobs/match/recalculate', { method: 'POST' });
+
+// Tech Hubs & Geo Discovery
+export const getTechHubs = () => request<any[]>('/discovery/hubs');
+export const crawlTechHubs = (body: { hubId?: string; tier?: string }) => request<any>('/discovery/crawl', { method: 'POST', body: JSON.stringify(body) });
+export const validatePostings = () => request<any>('/discovery/validate', { method: 'POST' });
+
+// Visual Screenshot Discovery
+export const uploadVisualScreenshot = (file: File) => {
+  const form = new FormData();
+  form.append('screenshot', file);
+  return fetch(`${API_BASE}/discovery/visual/upload`, {
+    method: 'POST',
+    headers: { ...authHeader() },
+    body: form,
+  }).then(async (r) => {
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.message || 'Failed to process screenshot');
+    }
+    return r.json();
+  });
+};
+
+export const uploadVisualBase64 = (base64Image: string, mimeType = 'image/png') =>
+  request<any>('/discovery/visual/upload', {
+    method: 'POST',
+    body: JSON.stringify({ base64Image, mimeType }),
+  });
+
+export const uploadVisualText = (rawText: string, platform?: string) =>
+  request<any>('/discovery/visual/upload', {
+    method: 'POST',
+    body: JSON.stringify({ rawText, platform }),
+  });
+
+export const getVisualDiscoveries = (filter = 'ACTIVE') =>
+  request<{ success: boolean; count: number; entries: any[] }>(`/discovery/visual?filter=${filter}`);
+
+export const updateVisualDiscoveryStatus = (id: string, status: 'APPLIED' | 'DONE' | 'DISMISSED') =>
+  request<any>(`/discovery/visual/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+
+export const restoreVisualDiscovery = (id: string) =>
+  request<any>(`/discovery/visual/${id}/restore`, { method: 'POST' });
+
+export const deleteVisualDiscovery = (id: string) =>
+  request<any>(`/discovery/visual/${id}`, { method: 'DELETE' });
+
+// Applications & Kanban Tracker
+export const getApplications = () => request<ApplicationDto[]>('/applications');
+
+export const trackApplication = (jobId: string, status = 'APPLIED', resumeLabel?: string) =>
+  request<ApplicationDto>('/applications', {
+    method: 'POST',
+    body: JSON.stringify({ jobId, status, resumeLabel }),
+  });
+
+export const updateApplicationStatus = (id: string, status: string, notes?: string) =>
+  request<ApplicationDto>(`/applications/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, notes }),
+  });
+
+// Sources & Exporter
+export const getSources = () => request<SourceHealthDto[]>('/sources');
+export const syncSource = (code: string) => request<any>(`/sources/${code}/sync`, { method: 'POST' });
+export const exportApplicationsCsv = () => `${API_BASE}/exports/csv`;

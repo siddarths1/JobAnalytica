@@ -14,7 +14,7 @@ services:
     plan: free
     region: oregon
     rootDir: .
-    buildCommand: pnpm install && pnpm --filter @jobanalytica/shared-types build && pnpm --filter api db:push && pnpm --filter api build
+    buildCommand: pnpm install --no-frozen-lockfile && pnpm --filter @jobanalytica/shared-types build && pnpm --filter api db:push && pnpm --filter api build
     startCommand: pnpm --filter api start:prod
     healthCheckPath: /api/v1/health
     envVars:
@@ -44,7 +44,7 @@ services:
     plan: free
     region: oregon
     rootDir: .
-    buildCommand: pnpm install && pnpm --filter @jobanalytica/shared-types build && pnpm --filter web build
+    buildCommand: pnpm install --no-frozen-lockfile && pnpm --filter @jobanalytica/shared-types build && pnpm --filter web build
     startCommand: pnpm --filter web start
     envVars:
       - key: NODE_ENV

@@ -1,82 +1,81 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CreateApplicationDto, UpdateApplicationDto } from './dto/application.dto';
+import { CreateApplicationDto, UpdateApplicationStatusDto } from './dto/application.dto';
+import { ApplicationStatus } from '@jobanalytica/shared-types';
 
 @Injectable()
 export class ApplicationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getUserApplications(userId: string) {
-    const apps = await this.prisma.application.findMany({
-      where: { userId },
+  async getUserApplications(userId: string, status?: ApplicationStatus) {
+    return this.prisma.application.findMany({
+      where: {
+        userId,
+        ...(status ? { status } : {}),
+      },
       include: {
         job: true,
-        events: {
-          orderBy: { eventTime: 'desc' },
-        },
       },
       orderBy: { updatedAt: 'desc' },
     });
-
-    return apps.map((app) => ({
-      id: app.id,
-      jobId: app.jobId,
-      jobTitle: app.job.title,
-      company: app.job.company,
-      location: app.job.location,
-      applyUrl: app.job.primaryApplyUrl,
-      resumeLabel: app.resumeLabel,
-      status: app.status,
-      appliedAt: app.appliedAt,
-      notes: app.notes,
-      salaryOffered: app.salaryOffered,
-      interviewDate: app.interviewDate,
-      updatedAt: app.updatedAt,
-      events: app.events,
-    }));
   }
 
   async createApplication(userId: string, dto: CreateApplicationDto) {
+    const job = await this.prisma.job.findUnique({
+      where: { id: dto.jobId },
+    });
+
+    if (!job) {
+      throw new NotFoundException('Job post not found');
+    }
+
+    const existing = await this.prisma.application.findUnique({
+      where: {
+        userId_jobId: {
+          userId,
+          jobId: dto.jobId,
+        },
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('You have already added this job to your tracker');
+    }
+
     return this.prisma.application.create({
       data: {
         userId,
         jobId: dto.jobId,
-        resumeLabel: dto.resumeLabel || 'Primary Resume',
-        status: dto.status || 'APPLIED',
-        appliedAt: dto.appliedAt ? new Date(dto.appliedAt) : new Date(),
+        status: dto.status || ApplicationStatus.SAVED,
         notes: dto.notes,
+        resumeId: dto.resumeId,
+        appliedAt: dto.status === ApplicationStatus.APPLIED ? new Date() : null,
+      },
+      include: {
+        job: true,
       },
     });
   }
 
-  async updateApplication(userId: string, id: string, dto: UpdateApplicationDto) {
+  async updateStatus(userId: string, id: string, dto: UpdateApplicationStatusDto) {
     const app = await this.prisma.application.findFirst({
       where: { id, userId },
     });
 
-    if (!app) throw new NotFoundException('Application not found');
-
-    const updated = await this.prisma.application.update({
-      where: { id },
-      data: {
-        status: dto.status ?? app.status,
-        notes: dto.notes ?? app.notes,
-        salaryOffered: dto.salaryOffered ?? app.salaryOffered,
-        interviewDate: dto.interviewDate ? new Date(dto.interviewDate) : app.interviewDate,
-      },
-    });
-
-    if (dto.status && dto.status !== app.status) {
-      await this.prisma.applicationEvent.create({
-        data: {
-          applicationId: app.id,
-          fromStatus: app.status,
-          toStatus: dto.status,
-          note: dto.notes || `Status changed from ${app.status} to ${dto.status}`,
-        },
-      });
+    if (!app) {
+      throw new NotFoundException('Application not found');
     }
 
-    return updated;
+    return this.prisma.application.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        notes: dto.notes !== undefined ? dto.notes : app.notes,
+        appliedAt: dto.status === ApplicationStatus.APPLIED && !app.appliedAt ? new Date() : app.appliedAt,
+      },
+      include: {
+        job: true,
+      },
+    });
   }
 }

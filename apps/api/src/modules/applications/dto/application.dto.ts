@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsNumber, IsDateString } from 'class-validator';
+import { IsString, IsEnum, IsOptional } from 'class-validator';
 import { ApplicationStatus } from '@jobanalytica/shared-types';
 
 export class CreateApplicationDto {
@@ -6,36 +6,23 @@ export class CreateApplicationDto {
   jobId: string;
 
   @IsOptional()
-  @IsString()
-  resumeLabel?: string;
-
-  @IsOptional()
   @IsEnum(ApplicationStatus)
   status?: ApplicationStatus;
 
   @IsOptional()
-  @IsDateString()
-  appliedAt?: string;
+  @IsString()
+  notes?: string;
 
   @IsOptional()
   @IsString()
-  notes?: string;
+  resumeId?: string;
 }
 
-export class UpdateApplicationDto {
-  @IsOptional()
+export class UpdateApplicationStatusDto {
   @IsEnum(ApplicationStatus)
-  status?: ApplicationStatus;
+  status: ApplicationStatus;
 
   @IsOptional()
   @IsString()
   notes?: string;
-
-  @IsOptional()
-  @IsNumber()
-  salaryOffered?: number;
-
-  @IsOptional()
-  @IsDateString()
-  interviewDate?: string;
 }

@@ -1,39 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { Response } from 'express';
-import { format } from 'fast-csv';
 
 @Injectable()
 export class ExportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async streamApplicationsCsv(res: Response, userId?: string): Promise<void> {
-    const csvStream = format({ headers: true });
-    csvStream.pipe(res);
-
+  async generateCsv(userId: string): Promise<string> {
     const applications = await this.prisma.application.findMany({
-      where: userId ? { userId } : {},
-      include: {
-        job: true,
-      },
-      orderBy: { updatedAt: 'desc' },
+      where: { userId },
+      include: { job: true },
+      orderBy: { createdAt: 'desc' },
     });
 
-    for (const app of applications) {
-      csvStream.write({
-        ID: app.id,
-        Title: app.job.title,
-        Company: app.job.company,
-        Location: app.job.location,
-        Status: app.status,
-        AppliedAt: app.appliedAt ? app.appliedAt.toISOString() : '',
-        Notes: app.notes || '',
-        SalaryOffered: app.salaryOffered || '',
-        InterviewDate: app.interviewDate ? app.interviewDate.toISOString() : '',
-        ApplyUrl: app.job.primaryApplyUrl,
-      });
-    }
+    const headers = ['Company', 'Title', 'Location', 'Status', 'Applied Date', 'Apply URL', 'Notes'];
+    const rows = applications.map((app) => [
+      `"${app.job.company.replace(/"/g, '""')}"`,
+      `"${app.job.title.replace(/"/g, '""')}"`,
+      `"${app.job.location.replace(/"/g, '""')}"`,
+      app.status,
+      app.appliedAt ? app.appliedAt.toISOString().split('T')[0] : '',
+      `"${app.job.primaryApplyUrl}"`,
+      `"${(app.notes || '').replace(/"/g, '""')}"`,
+    ]);
 
-    csvStream.end();
+    return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   }
 }

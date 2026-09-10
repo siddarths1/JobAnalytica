@@ -1,97 +1,82 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getSources, syncSource } from '@/lib/api-client';
-import { SourceHealthDto, SourceHealthStatus } from '@jobanalytica/shared-types';
-import { RefreshCw, CheckCircle2, AlertTriangle, XCircle, Globe } from 'lucide-react';
+import { ApiClient } from '@/lib/api-client';
+
+interface Source {
+  id: string;
+  code: string;
+  name: string;
+  isApi: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
+
+interface SourceHealth {
+  name: string;
+  code: string;
+  status: string;
+  lastChecked: string;
+}
 
 export default function SourcesPage() {
-  const [sources, setSources] = useState<SourceHealthDto[]>([]);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [health, setHealth] = useState<SourceHealth[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState<string | null>(null);
-
-  const loadSources = async () => {
-    try {
-      const data = await getSources();
-      setSources(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    loadSources();
+    async function load() {
+      try {
+        const [srcs, hlth] = await Promise.all([
+          ApiClient.request<Source[]>('/sources'),
+          ApiClient.request<SourceHealth[]>('/sources/health'),
+        ]);
+        setSources(srcs);
+        setHealth(hlth);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, []);
 
-  const handleSync = async (code: string) => {
-    setSyncing(code);
-    try {
-      await syncSource(code);
-      await loadSources();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSyncing(null);
-    }
-  };
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Ingestion Sources & ATS Connectors</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Monitor the health status of active job board scrapers and ATS adapters (Greenhouse, Lever, Ashby, Adzuna).
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+          Active Job Sources & ATS Health
+        </h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          Real-time connector status for Greenhouse, Lever, Ashby, and Adzuna adapters.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {sources.map((s) => (
-          <div key={s.id} className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400">
-                  <Globe className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white">{s.name}</h3>
-                  <p className="text-xs text-slate-400 font-mono uppercase">{s.code}</p>
-                </div>
-              </div>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
-                s.healthStatus === SourceHealthStatus.HEALTHY ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                s.healthStatus === SourceHealthStatus.DEGRADED ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-              }`}>
-                {s.healthStatus === SourceHealthStatus.HEALTHY && <CheckCircle2 className="w-3 h-3" />}
-                {s.healthStatus === SourceHealthStatus.DEGRADED && <AlertTriangle className="w-3 h-3" />}
-                {s.healthStatus === SourceHealthStatus.DOWN && <XCircle className="w-3 h-3" />}
-                {s.healthStatus}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {health.map((item) => (
+          <div
+            key={item.code}
+            className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between"
+          >
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{item.name}</h3>
+              <p className="text-xs text-slate-500 mt-1">Code: {item.code}</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Checked: {new Date(item.lastChecked).toLocaleTimeString()}
+              </p>
+            </div>
+            <div>
+              <span
+                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                  item.status === 'HEALTHY'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                }`}
+              >
+                ● {item.status}
               </span>
             </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-800/60 text-xs">
-              <div>
-                <span className="text-slate-400">Active Jobs:</span>
-                <p className="font-semibold text-white mt-0.5">{s.activeJobsCount} requisitions</p>
-              </div>
-              <div>
-                <span className="text-slate-400">Last Synced:</span>
-                <p className="font-semibold text-white mt-0.5">
-                  {s.lastPolledAt ? new Date(s.lastPolledAt).toLocaleTimeString() : 'Never'}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => handleSync(s.code)}
-              disabled={syncing === s.code}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-all flex items-center justify-center gap-2 active:scale-95"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing === s.code ? 'animate-spin' : ''}`} />
-              {syncing === s.code ? 'Syncing ATS Feed...' : 'Trigger Immediate Sync'}
-            </button>
           </div>
         ))}
       </div>

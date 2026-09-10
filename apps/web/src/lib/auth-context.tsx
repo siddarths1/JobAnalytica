@@ -1,70 +1,88 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserDto } from '@jobanalytica/shared-types';
-import { loginUser, registerUser, getMe } from './api-client';
+import { useRouter } from 'next/navigation';
+import { ApiClient } from './api-client';
+
+interface User {
+  id: string;
+  email: string;
+  fullName: string;
+  role: string;
+}
 
 interface AuthContextType {
-  user: UserDto | null;
-  token: string | null;
+  user: User | null;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  register: (email: string, pass: string, name: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, fullName: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  login: async () => {},
+  register: async () => {},
+  logout: () => {},
+});
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserDto | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    if (savedToken) {
-      setToken(savedToken);
-      getMe()
-        .then((u) => setUser(u))
-        .catch(() => {
-          localStorage.removeItem('token');
-          setToken(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
+    const initAuth = async () => {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        try {
+          const res = await ApiClient.request<{ user: User }>('/auth/me');
+          setUser(res.user);
+        } catch {
+          localStorage.removeItem('access_token');
+          setUser(null);
+        }
+      }
       setLoading(false);
-    }
+    };
+
+    initAuth();
   }, []);
 
-  const login = async (email: string, pass: string) => {
-    const res = await loginUser(email, pass);
-    localStorage.setItem('token', res.accessToken);
-    setToken(res.accessToken);
+  const login = async (email: string, password: string) => {
+    const res = await ApiClient.request<{ user: User; accessToken: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+
+    localStorage.setItem('access_token', res.accessToken);
     setUser(res.user);
+    router.push('/dashboard');
   };
 
-  const register = async (email: string, pass: string, name: string) => {
-    const res = await registerUser(email, pass, name);
-    localStorage.setItem('token', res.accessToken);
-    setToken(res.accessToken);
+  const register = async (email: string, fullName: string, password: string) => {
+    const res = await ApiClient.request<{ user: User; accessToken: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, fullName, password }),
+    });
+
+    localStorage.setItem('access_token', res.accessToken);
     setUser(res.user);
+    router.push('/dashboard');
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
+    localStorage.removeItem('access_token');
     setUser(null);
+    router.push('/login');
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
-  return context;
 };
+
+export const useAuth = () => useContext(AuthContext);

@@ -1,87 +1,45 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { JobsService } from '../jobs/jobs.service';
-import { SourceHealthStatus } from '@jobanalytica/shared-types';
+import { GreenhouseAdapter } from '../../adapters/greenhouse/greenhouse.adapter';
+import { LeverAdapter } from '../../adapters/lever/lever.adapter';
+import { AshbyAdapter } from '../../adapters/ashby/ashby.adapter';
+import { AdzunaAdapter } from '../../adapters/adzuna/adzuna.adapter';
 
 @Injectable()
 export class SourcesService {
-  private readonly logger = new Logger(SourcesService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jobsService: JobsService,
+    private readonly greenhouse: GreenhouseAdapter,
+    private readonly lever: LeverAdapter,
+    private readonly ashby: AshbyAdapter,
+    private readonly adzuna: AdzunaAdapter,
   ) {}
 
-  async getSourcesHealth() {
-    let sources = await this.prisma.jobSource.findMany({
-      include: {
-        _count: {
-          select: { postings: true },
-        },
-      },
+  async getAllSources() {
+    return this.prisma.jobSource.findMany({
+      orderBy: { name: 'asc' },
     });
-
-    if (sources.length === 0) {
-      // Seed default sources
-      await this.prisma.jobSource.createMany({
-        data: [
-          { code: 'greenhouse', name: 'Greenhouse ATS', baseUrl: 'https://boards-api.greenhouse.io' },
-          { code: 'lever', name: 'Lever ATS', baseUrl: 'https://api.lever.co' },
-          { code: 'ashby', name: 'Ashby ATS', baseUrl: 'https://api.ashbyhq.com' },
-          { code: 'adzuna', name: 'Adzuna Aggregator', baseUrl: 'https://api.adzuna.com' },
-        ],
-      });
-
-      sources = await this.prisma.jobSource.findMany({
-        include: {
-          _count: {
-            select: { postings: true },
-          },
-        },
-      });
-    }
-
-    return sources.map((s) => ({
-      id: s.id,
-      code: s.code,
-      name: s.name,
-      healthStatus: s.healthStatus as SourceHealthStatus,
-      lastPolledAt: s.lastPolledAt,
-      lastError: s.lastError,
-      consecutiveFailures: s.consecutiveFailures,
-      activeJobsCount: s._count.postings,
-    }));
   }
 
-  async syncSource(code: string) {
-    const source = await this.prisma.jobSource.findUnique({
-      where: { code },
-    });
+  async checkSourcesHealth() {
+    const adapters = [
+      { name: 'Greenhouse Public ATS', code: 'greenhouse', adapter: this.greenhouse },
+      { name: 'Lever Public ATS', code: 'lever', adapter: this.lever },
+      { name: 'Ashby Public ATS', code: 'ashby', adapter: this.ashby },
+      { name: 'Adzuna Global', code: 'adzuna', adapter: this.adzuna },
+    ];
 
-    if (!source) throw new NotFoundException(`Source ${code} not found`);
-
-    try {
-      const result = await this.jobsService.syncAllSources();
-      await this.prisma.jobSource.update({
-        where: { code },
-        data: {
-          lastPolledAt: new Date(),
-          healthStatus: 'HEALTHY',
-          consecutiveFailures: 0,
-        },
+    const results = [];
+    for (const item of adapters) {
+      const isHealthy = await item.adapter.healthCheck();
+      results.push({
+        name: item.name,
+        code: item.code,
+        status: isHealthy ? 'HEALTHY' : 'DEGRADED',
+        lastChecked: new Date().toISOString(),
       });
-      return { success: true, message: `Synced ${code}`, result };
-    } catch (err: any) {
-      await this.prisma.jobSource.update({
-        where: { code },
-        data: {
-          lastPolledAt: new Date(),
-          healthStatus: 'DEGRADED',
-          lastError: err.message,
-          consecutiveFailures: { increment: 1 },
-        },
-      });
-      throw err;
     }
+
+    return results;
   }
 }

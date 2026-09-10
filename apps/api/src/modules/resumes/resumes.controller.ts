@@ -9,54 +9,49 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ResumesService } from './resumes.service';
+import { UpdateResumeDto } from './dto/resume.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { CreateCandidateProfileDto } from './dto/resume.dto';
 
-@Controller('resumes')
 @UseGuards(JwtAuthGuard)
+@Controller('resumes')
 export class ResumesController {
   constructor(private readonly resumesService: ResumesService) {}
 
   @Get()
-  getProfiles(@CurrentUser('id') userId: string) {
-    return this.resumesService.getUserProfiles(userId);
-  }
-
-  @Post('profile')
-  createProfile(
-    @CurrentUser('id') userId: string,
-    @Body() dto: CreateCandidateProfileDto,
-  ) {
-    return this.resumesService.createCandidateProfile(userId, dto);
+  async getResumes(@CurrentUser() user: any) {
+    return this.resumesService.getUserResumes(user.id);
   }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
-  uploadResume(
-    @CurrentUser('id') userId: string,
+  async uploadResume(
+    @CurrentUser() user: any,
     @UploadedFile() file: Express.Multer.File,
-    @Body('label') label?: string,
   ) {
-    return this.resumesService.uploadAndParseResume(userId, file, label);
+    if (!file) {
+      throw new BadRequestException('Resume file is required (PDF format)');
+    }
+    return this.resumesService.uploadResume(user.id, file);
   }
 
   @Patch(':id/primary')
-  setPrimary(
-    @CurrentUser('id') userId: string,
-    @Param('id') profileId: string,
+  async setPrimary(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
   ) {
-    return this.resumesService.setPrimaryProfile(userId, profileId);
+    return this.resumesService.setPrimaryResume(user.id, id);
   }
 
   @Delete(':id')
-  deleteProfile(
-    @CurrentUser('id') userId: string,
-    @Param('id') profileId: string,
+  async deleteResume(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
   ) {
-    return this.resumesService.deleteProfile(userId, profileId);
+    return this.resumesService.deleteResume(user.id, id);
   }
 }

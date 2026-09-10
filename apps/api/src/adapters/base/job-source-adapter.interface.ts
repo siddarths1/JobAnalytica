@@ -1,5 +1,12 @@
 import { WorkMode, EmploymentType } from '@jobanalytica/shared-types';
 
+export interface SourceInfo {
+  code: string;
+  name: string;
+  isApi: boolean;
+  rateLimitPerMinute: number;
+}
+
 export interface NormalizedJob {
   externalId: string;
   sourceCode: string;
@@ -17,12 +24,22 @@ export interface NormalizedJob {
   maxExperience?: number;
   applyUrl: string;
   sourceUrl?: string;
-  rawPayload?: Record<string, any>;
   postedAt?: Date;
+  rawPayload?: Record<string, unknown>;
+}
+
+export interface JobSearchCriteria {
+  keywords?: string[];
+  roles?: string[];
+  locations?: string[];
+  workModes?: WorkMode[];
+  limit?: number;
+  postedAfter?: Date;
 }
 
 export interface JobSourceAdapter {
-  readonly sourceCode: string;
-  readonly name: string;
-  fetchJobs(options?: Record<string, any>): Promise<NormalizedJob[]>;
+  getSourceInfo(): SourceInfo;
+  search(criteria: JobSearchCriteria): Promise<NormalizedJob[]>;
+  getJob?(externalId: string): Promise<NormalizedJob | null>;
+  healthCheck(): Promise<boolean>;
 }

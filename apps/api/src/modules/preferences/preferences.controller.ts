@@ -1,24 +1,24 @@
-import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
 import { PreferencesService } from './preferences.service';
+import { UpdatePreferenceDto } from './dto/preference.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { UpdatePreferenceDto } from './dto/preference.dto';
 
-@Controller('preferences')
 @UseGuards(JwtAuthGuard)
+@Controller('preferences')
 export class PreferencesController {
   constructor(private readonly preferencesService: PreferencesService) {}
 
   @Get()
-  getPreferences(@CurrentUser('id') userId: string) {
-    return this.preferencesService.getUserPreferences(userId);
+  async getPreferences(@CurrentUser() user: any) {
+    return this.preferencesService.getUserPreferences(user.id);
   }
 
-  @Patch()
-  updatePreferences(
-    @CurrentUser('id') userId: string,
+  @Put()
+  async updatePreferences(
+    @CurrentUser() user: any,
     @Body() dto: UpdatePreferenceDto,
   ) {
-    return this.preferencesService.updateUserPreferences(userId, dto);
+    return this.preferencesService.updateUserPreferences(user.id, dto);
   }
 }

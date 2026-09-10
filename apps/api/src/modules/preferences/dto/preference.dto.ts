@@ -1,47 +1,27 @@
-import { IsArray, IsOptional, IsBoolean, IsNumber, IsString } from 'class-validator';
+import { IsOptional, IsArray, IsString, IsNumber, Min } from 'class-validator';
 
 export class UpdatePreferenceDto {
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
   targetRoles?: string[];
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
   locations?: string[];
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
   workModes?: string[];
 
   @IsOptional()
-  @IsArray()
-  preferredTiers?: string[];
-
-  @IsOptional()
   @IsNumber()
+  @Min(0)
   minSalary?: number;
 
   @IsOptional()
-  @IsNumber()
-  maxSalary?: number;
-
-  @IsOptional()
-  @IsNumber()
-  minExperience?: number;
-
-  @IsOptional()
-  @IsArray()
-  preferredCompanies?: string[];
-
-  @IsOptional()
-  @IsArray()
-  excludedCompanies?: string[];
-
-  @IsOptional()
-  @IsBoolean()
-  enableDailyDigest?: boolean;
-
-  @IsOptional()
   @IsString()
-  digestTime?: string;
+  currency?: string;
 }

@@ -1,67 +1,63 @@
 import Link from 'next/link';
-import { ArrowRight, Sparkles, Target, Zap, Shield, CheckCircle2 } from 'lucide-react';
 
-export default function HomePage() {
+export default function LandingPage() {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center space-y-12">
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold tracking-wide uppercase">
-        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-        Production-Ready Multi-Resume Engine
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-semibold uppercase tracking-wider mb-6">
+        <span>⚡ Next-Gen ATS Intelligence</span>
       </div>
 
-      <div className="space-y-4 max-w-3xl">
-        <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-tight">
-          Precision Job Discovery for <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Multi-Role Engineers</span>
-        </h1>
-        <p className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto">
-          Upload role-specific resumes, discover verified tech opportunities across India's top tech hubs, and automatically track applications across company tiers.
-        </p>
-      </div>
+      <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-slate-900 dark:text-white max-w-4xl">
+        Stop chasing stale recruiter reposts. Apply <span className="text-blue-600">directly to official ATS portals</span>.
+      </h1>
 
-      <div className="flex flex-wrap items-center justify-center gap-4">
+      <p className="mt-6 text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-2xl">
+        Aggregating verified Greenhouse, Lever, and Ashby postings in real-time. Match with multiple resumes and extract jobs directly from screenshots.
+      </p>
+
+      <div className="mt-10 flex flex-wrap gap-4 justify-center">
+        <Link
+          href="/register"
+          className="rounded-xl bg-blue-600 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-500 transition-all"
+        >
+          Get Started Free
+        </Link>
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-600/25 active:scale-95"
+          className="rounded-xl bg-white dark:bg-slate-900 px-6 py-3.5 text-base font-semibold text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
         >
-          Explore Job Feed
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-        <Link
-          href="/resume"
-          className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-medium text-sm transition-all active:scale-95"
-        >
-          Manage Multi-Resumes
+          Explore Live Feed
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full max-w-4xl pt-8 text-left">
-        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3">
-          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-            <Target className="w-5 h-5" />
+      <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8 text-left max-w-5xl w-full">
+        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-lg mb-4">
+            🏢
           </div>
-          <h3 className="text-lg font-semibold text-white">Multi-Role AI Matching</h3>
-          <p className="text-sm text-slate-400">
-            Evaluate every job posting against your separate Backend, AI/ML, and Full Stack resumes with custom fit scores.
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Direct ATS Integration</h3>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            Real-time synchronization with Greenhouse, Lever, and Ashby careers boards. Zero middlemen.
           </p>
         </div>
 
-        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3">
-          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-            <Zap className="w-5 h-5" />
+        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg mb-4">
+            📸
           </div>
-          <h3 className="text-lg font-semibold text-white">Regional Tech Hubs</h3>
-          <p className="text-sm text-slate-400">
-            Target India's Top 10 Tech Hubs (Bengaluru, Hyderabad, Pune, Delhi-NCR, Chennai) across 4 verified company tiers.
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Visual Screenshot OCR</h3>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            Take a screenshot of any job post anywhere. We extract text and automatically resolve the direct career portal.
           </p>
         </div>
 
-        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-3">
-          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-            <Shield className="w-5 h-5" />
+        <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-lg mb-4">
+            🎯
           </div>
-          <h3 className="text-lg font-semibold text-white">Liveness & Freshness</h3>
-          <p className="text-sm text-slate-400">
-            Zero stale postings. Live ATS health probes ensure every career link is verified active before you apply.
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Multi-Resume Match</h3>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            Store specialized resumes for frontend, backend, or fullstack. Match scores auto-adapt per resume.
           </p>
         </div>
       </div>

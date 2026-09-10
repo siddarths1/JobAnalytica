@@ -1,25 +1,14 @@
-import type { Metadata, Viewport } from 'next';
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
-import { Navbar } from '@/components/navbar';
 import { AuthProvider } from '@/lib/auth-context';
+import { Navbar } from '@/components/navbar';
 
-export const viewport: Viewport = {
-  themeColor: '#4f46e5',
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'JobAnalytica - AI Job Discovery & Multi-Resume Engine',
-  description: 'Production-ready AI job discovery, multi-role resume match engine, and application Kanban tracking system.',
-  manifest: '/manifest.json',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'JobAnalytica',
-  },
+  title: 'JobAnalytica | Intelligent Direct ATS Job Intelligence',
+  description: 'Track, discover and auto-match direct company jobs with ATS portal verification and visual screenshot OCR intelligence.',
 };
 
 export default function RootLayout({
@@ -28,18 +17,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-      </head>
-      <body className="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col selection:bg-indigo-500 selection:text-white">
+    <html lang="en">
+      <body className={inter.className}>
         <AuthProvider>
-          <Navbar />
-          <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-            {children}
-          </main>
+          <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+            <Navbar />
+            <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl">
+              {children}
+            </main>
+          </div>
         </AuthProvider>
       </body>
     </html>

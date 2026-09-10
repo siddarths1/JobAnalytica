@@ -140,7 +140,8 @@ export class JobsService {
   async syncAllSources(): Promise<{ totalIngested: number }> {
     const multiTierCatalog: NormalizedJob[] = [
       // 1. EARLY-STAGE STARTUPS & SEED/SERIES-A
-      {\n        externalId: 'startup-langflow-01',
+      {
+        externalId: 'startup-langflow-01',
         sourceCode: 'ashby',
         title: 'Founding AI Systems Engineer',
         company: 'Langflow (Seed Stage)',
@@ -354,4 +355,289 @@ export class JobsService {
     return { totalIngested: total };
   }
 
-  async generateMatchesForUser(userId: string): Promise<void> {\n    const candidateProfiles = await this.prisma.candidateProfile.findMany({\n      where: { userId },\n    });\n    const rawPreferences = await this.prisma.userPreference.findUnique({\n      where: { userId },\n    });\n\n    const hasProfiles = candidateProfiles.length > 0;\n    const excludedCompanies: string[] = rawPreferences ? JSON.parse(rawPreferences.excludedCompanies || '[]') : [];\n    const preferredWorkModes: string[] = rawPreferences ? JSON.parse(rawPreferences.workModes || '[]') : ['REMOTE', 'HYBRID', 'ONSITE'];\n    const preferredTiers: string[] = rawPreferences ? JSON.parse(rawPreferences.preferredTiers || '[]') : [];\n\n    const allJobs = await this.prisma.canonicalJob.findMany({\n      where: { isActive: true },\n      include: { sourcePostings: { include: { source: true } } },\n    });\n\n    for (const job of allJobs) {\n      if (excludedCompanies.some(c => c.toLowerCase() === job.company.toLowerCase())) {\n        continue;\n      }\n\n      const rawJobSkills: string[] = JSON.parse(job.requiredSkills || '[]');\n      const jobSkills = rawJobSkills.map(s => s.toLowerCase().trim());\n      const jobMinExp = job.minExperience !== null && job.minExperience !== undefined ? job.minExperience : 2;\n\n      if (!hasProfiles) {\n        await this.prisma.jobMatch.upsert({\n          where: { userId_jobId_profileId: { userId, jobId: job.id, profileId: '' } },\n          create: {\n            userId,\n            jobId: job.id,\n            profileId: null,\n            matchedProfileLabel: 'General Profile',\n            overallScore: 50,\n            skillScore: 0,\n            experienceScore: 0,\n            roleScore: 0,\n            locationScore: 0,\n            applicationPriority: 50,\n            recommendation: 'WORTH_APPLYING',\n            whyApply: JSON.stringify(['Upload your resume in Profile tab to see personalized role & skill matching']),\n            risksAndGaps: JSON.stringify(['Requires resume upload for custom scoring']),\n            verdictReason: 'Upload a resume to calculate tailored fit scores.',\n            alternateProfiles: JSON.stringify([]),\n          },\n          update: {\n            overallScore: 50,\n            applicationPriority: 50,\n          },\n        });\n        continue;\n      }\n\n      // Evaluate job against ALL candidate profiles\n      const evaluations = candidateProfiles.map((prof) => {\n        const candidateSkills: string[] = JSON.parse(prof.skills || '[]').map((s: string) => s.toLowerCase().trim());\n        const candidateRoles: string[] = JSON.parse(prof.targetRoles || '[]').map((r: string) => r.toLowerCase().trim());\n        const candidateExp = prof.totalExperience || 0;\n\n        const matchedSkills = rawJobSkills.filter(s =>\n          candidateSkills.some(cs => cs === s.toLowerCase() || s.toLowerCase().includes(cs) || cs.includes(s.toLowerCase()))\n        );\n        const missingSkills = rawJobSkills.filter(s => !matchedSkills.includes(s));\n\n        let skillScore = 40;\n        if (jobSkills.length > 0) {\n          skillScore = Math.round((matchedSkills.length / jobSkills.length) * 100);\n        }\n\n        const expDiff = candidateExp - jobMinExp;\n        let experienceScore = 100;\n        if (expDiff < 0) {\n          experienceScore = Math.max(30, Math.round(100 - Math.abs(expDiff) * 25));\n        }\n\n        const titleLower = job.title.toLowerCase();\n        const roleMatch = candidateRoles.some(r => titleLower.includes(r) || r.includes(titleLower));\n        const roleScore = roleMatch ? 95 : 70;\n\n        let locationScore = 75;\n        if (preferredWorkModes.includes(job.workMode)) locationScore = 100;\n        else if (job.workMode === 'REMOTE') locationScore = 95;\n\n        // Tier alignment bonus\n        let tierBonus = 0;\n        if (preferredTiers.length > 0 && preferredTiers.includes(job.companyTier)) {\n          tierBonus = 5;\n        }\n\n        const overallScore = Math.min(99, Math.round(\n          skillScore * 0.45 + experienceScore * 0.25 + roleScore * 0.15 + locationScore * 0.15 + tierBonus,\n        ));\n\n        const applicationPriority = Math.min(99, Math.max(20, Math.round(\n          overallScore * 0.9 + (job.workMode === 'REMOTE' ? 6 : 0) + (matchedSkills.length >= 3 ? 5 : 0)\n        )));\n\n        let recommendation = 'WORTH_APPLYING';\n        if (applicationPriority >= 80 && skillScore >= 60) recommendation = 'APPLY_HIGH_PRIORITY';\n        else if (applicationPriority < 55) recommendation = 'POSSIBLE_MATCH';\n\n        const tierName =\n          job.companyTier === 'STARTUP_EARLY_STAGE' ? 'Early-Stage Startup' :\n          job.companyTier === 'TIER_3_SERVICES' ? 'IT / Engineering Services' :\n          job.companyTier === 'TIER_1_LARGE_CAP' ? 'Tier 1 Enterprise' : 'Mid-Cap Growth';\n\n        const whyApply: string[] = [];\n        if (matchedSkills.length > 0) {\n          whyApply.push(`Match with ${prof.label}: ${matchedSkills.length}/${rawJobSkills.length} key skills (${matchedSkills.slice(0, 4).join(', ')})`);\n        }\n        if (candidateExp >= jobMinExp) {\n          whyApply.push(`Experience on ${prof.label} (${candidateExp} yrs) satisfies requirement (${jobMinExp}+ yrs)`);\n        }\n        whyApply.push(`Company Scale: ${tierName} (${job.companyScale})`);\n\n        const risksAndGaps: string[] = [];\n        if (missingSkills.length > 0) {\n          risksAndGaps.push(`Missing skills for ${prof.label}: ${missingSkills.slice(0, 3).join(', ')}`);\n        }\n        if (candidateExp < jobMinExp) {\n          risksAndGaps.push(`Job prefers ${jobMinExp}+ years of experience (${prof.label} has ${candidateExp} yrs)`);\n        }\n\n        return {\n          profileId: prof.id,\n          profileLabel: prof.label,\n          isPrimary: prof.isPrimary,\n          overallScore,\n          skillScore,\n          experienceScore,\n          roleScore,\n          locationScore,\n          applicationPriority,\n          recommendation,\n          whyApply,\n          risksAndGaps,\n          verdictReason: applicationPriority >= 80\n            ? `High-yield opportunity at ${job.company} (${tierName}) with your ${prof.label}.`\n            : `Moderate match with ${prof.label}.`,\n        };\n      });\n\n      evaluations.sort((a, b) => b.applicationPriority - a.applicationPriority);\n      const alternateProfiles = evaluations.slice(1).map(e => ({\n        profileLabel: e.profileLabel,\n        priorityScore: e.applicationPriority,\n        skillScore: e.skillScore,\n      }));\n\n      for (const ev of evaluations) {\n        await this.prisma.jobMatch.upsert({\n          where: {\n            userId_jobId_profileId: {\n              userId,\n              jobId: job.id,\n              profileId: ev.profileId,\n            },\n          },\n          create: {\n            userId,\n            jobId: job.id,\n            profileId: ev.profileId,\n            matchedProfileLabel: ev.profileLabel,\n            overallScore: ev.overallScore,\n            skillScore: ev.skillScore,\n            experienceScore: ev.experienceScore,\n            roleScore: ev.roleScore,\n            locationScore: ev.locationScore,\n            applicationPriority: ev.applicationPriority,\n            recommendation: ev.recommendation,\n            whyApply: JSON.stringify(ev.whyApply),\n            risksAndGaps: JSON.stringify(ev.risksAndGaps),\n            verdictReason: ev.verdictReason,\n            alternateProfiles: JSON.stringify(alternateProfiles),\n          },\n          update: {\n            matchedProfileLabel: ev.profileLabel,\n            overallScore: ev.overallScore,\n            skillScore: ev.skillScore,\n            experienceScore: ev.experienceScore,\n            roleScore: ev.roleScore,\n            locationScore: ev.locationScore,\n            applicationPriority: ev.applicationPriority,\n            recommendation: ev.recommendation,\n            whyApply: JSON.stringify(ev.whyApply),\n            risksAndGaps: JSON.stringify(ev.risksAndGaps),\n            verdictReason: ev.verdictReason,\n            alternateProfiles: JSON.stringify(alternateProfiles),\n          },\n        });\n      }\n    }\n  }\n\n  async importCustomJob(userId: string, dto: { title: string; company: string; location?: string; workMode?: string; description: string; applyUrl?: string }) {\n    const knownSkills = [\n      'Node.js', 'NestJS', 'Next.js', 'React', 'TypeScript', 'JavaScript', 'Python', 'Go',\n      'Java', 'C++', 'Rust', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'GraphQL', 'REST',\n      'Docker', 'Kubernetes', 'AWS', 'GCP', 'Azure', 'Git', 'CI/CD', 'FastAPI', 'PyTorch', 'AI/ML'\n    ];\n    const extractedSkills = knownSkills.filter(s => {\n      const escaped = s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n      return new RegExp(`\\\\b${escaped}\\\\b`, 'i').test(dto.description);\n    });\n\n    const { tier, scale } = this.classifyCompanyTier(dto.company, dto.description);\n\n    const normalizedJob: NormalizedJob = {\n      externalId: 'custom-' + Date.now(),\n      sourceCode: 'manual',\n      title: dto.title,\n      company: dto.company,\n      location: dto.location || 'Remote',\n      workMode: (dto.workMode as any) || 'REMOTE',\n      employmentType: EmploymentType.FULL_TIME as any,\n      description: dto.description,\n      requiredSkills: extractedSkills.length > 0 ? extractedSkills : ['Engineering'],\n      applyUrl: dto.applyUrl || '#',\n      sourceUrl: dto.applyUrl,\n      postedAt: new Date(),\n    };\n\n    await this.ingestJob(normalizedJob);\n    await this.generateMatchesForUser(userId);\n    return { success: true, message: 'Custom job evaluated across company tiers and role profiles!' };\n  }\n\n  async getFeed(userId: string, profileId?: string) {\n    const profiles = await this.prisma.candidateProfile.findMany({\n      where: { userId },\n      select: { id: true, label: true, isPrimary: true },\n    });\n    const hasProfile = profiles.length > 0;\n\n    const matchCount = await this.prisma.jobMatch.count({ where: { userId } });\n    if (matchCount === 0) {\n      await this.syncAllSources();\n      await this.generateMatchesForUser(userId);\n    }\n\n    const whereClause: any = { userId, isIgnored: false };\n    if (profileId && profileId !== 'ALL') {\n      whereClause.profileId = profileId;\n    }\n\n    const rawMatches = await this.prisma.jobMatch.findMany({\n      where: whereClause,\n      orderBy: { applicationPriority: 'desc' },\n      include: {\n        job: {\n          include: {\n            sourcePostings: {\n              include: { source: true },\n            },\n          },\n        },\n      },\n    });\n\n    const seenJobs = new Set<string>();\n    const matches: any[] = [];\n\n    for (const m of rawMatches) {\n      if (!profileId || profileId === 'ALL') {\n        if (seenJobs.has(m.jobId)) continue;\n        seenJobs.add(m.jobId);\n      }\n      matches.push(m);\n    }\n\n    return {\n      hasProfile,\n      profiles,\n      matches: matches.map((m) => ({\n        ...m,\n        whyApply: JSON.parse(m.whyApply || '[]'),\n        risksAndGaps: JSON.parse(m.risksAndGaps || '[]'),\n        alternateProfiles: JSON.parse(m.alternateProfiles || '[]'),\n        job: {\n          ...m.job,\n          requiredSkills: JSON.parse(m.job.requiredSkills || '[]'),\n        },\n      })),\n    };\n  }\n}
+  async generateMatchesForUser(userId: string): Promise<void> {
+    const candidateProfiles = await this.prisma.candidateProfile.findMany({
+      where: { userId },
+    });
+    const rawPreferences = await this.prisma.userPreference.findUnique({
+      where: { userId },
+    });
+
+    const hasProfiles = candidateProfiles.length > 0;
+    const excludedCompanies: string[] = rawPreferences ? JSON.parse(rawPreferences.excludedCompanies || '[]') : [];
+    const preferredWorkModes: string[] = rawPreferences ? JSON.parse(rawPreferences.workModes || '[]') : ['REMOTE', 'HYBRID', 'ONSITE'];
+    const preferredTiers: string[] = rawPreferences ? JSON.parse(rawPreferences.preferredTiers || '[]') : [];
+
+    const allJobs = await this.prisma.canonicalJob.findMany({
+      where: { isActive: true },
+      include: { sourcePostings: { include: { source: true } } },
+    });
+
+    for (const job of allJobs) {
+      if (excludedCompanies.some(c => c.toLowerCase() === job.company.toLowerCase())) {
+        continue;
+      }
+
+      const rawJobSkills: string[] = JSON.parse(job.requiredSkills || '[]');
+      const jobSkills = rawJobSkills.map(s => s.toLowerCase().trim());
+      const jobMinExp = job.minExperience !== null && job.minExperience !== undefined ? job.minExperience : 2;
+
+      if (!hasProfiles) {
+        await this.prisma.jobMatch.upsert({
+          where: { userId_jobId_profileId: { userId, jobId: job.id, profileId: '' } },
+          create: {
+            userId,
+            jobId: job.id,
+            profileId: null,
+            matchedProfileLabel: 'General Profile',
+            overallScore: 50,
+            skillScore: 0,
+            experienceScore: 0,
+            roleScore: 0,
+            locationScore: 0,
+            applicationPriority: 50,
+            recommendation: 'WORTH_APPLYING',
+            whyApply: JSON.stringify(['Upload your resume in Profile tab to see personalized role & skill matching']),
+            risksAndGaps: JSON.stringify(['Requires resume upload for custom scoring']),
+            verdictReason: 'Upload a resume to calculate tailored fit scores.',
+            alternateProfiles: JSON.stringify([]),
+          },
+          update: {
+            overallScore: 50,
+            applicationPriority: 50,
+          },
+        });
+        continue;
+      }
+
+      const evaluations = candidateProfiles.map((prof) => {
+        const candidateSkills: string[] = JSON.parse(prof.skills || '[]').map((s: string) => s.toLowerCase().trim());
+        const candidateRoles: string[] = JSON.parse(prof.targetRoles || '[]').map((r: string) => r.toLowerCase().trim());
+        const candidateExp = prof.totalExperience || 0;
+
+        const matchedSkills = rawJobSkills.filter(s =>
+          candidateSkills.some(cs => cs === s.toLowerCase() || s.toLowerCase().includes(cs) || cs.includes(s.toLowerCase()))
+        );
+        const missingSkills = rawJobSkills.filter(s => !matchedSkills.includes(s));
+
+        let skillScore = 40;
+        if (jobSkills.length > 0) {
+          skillScore = Math.round((matchedSkills.length / jobSkills.length) * 100);
+        }
+
+        const expDiff = candidateExp - jobMinExp;
+        let experienceScore = 100;
+        if (expDiff < 0) {
+          experienceScore = Math.max(30, Math.round(100 - Math.abs(expDiff) * 25));
+        }
+
+        const titleLower = job.title.toLowerCase();
+        const roleMatch = candidateRoles.some(r => titleLower.includes(r) || r.includes(titleLower));
+        const roleScore = roleMatch ? 95 : 70;
+
+        let locationScore = 75;
+        if (preferredWorkModes.includes(job.workMode)) locationScore = 100;
+        else if (job.workMode === 'REMOTE') locationScore = 95;
+
+        let tierBonus = 0;
+        if (preferredTiers.length > 0 && preferredTiers.includes(job.companyTier)) {
+          tierBonus = 5;
+        }
+
+        const overallScore = Math.min(99, Math.round(
+          skillScore * 0.45 + experienceScore * 0.25 + roleScore * 0.15 + locationScore * 0.15 + tierBonus,
+        ));
+
+        const applicationPriority = Math.min(99, Math.max(20, Math.round(
+          overallScore * 0.9 + (job.workMode === 'REMOTE' ? 6 : 0) + (matchedSkills.length >= 3 ? 5 : 0)
+        )));
+
+        let recommendation = 'WORTH_APPLYING';
+        if (applicationPriority >= 80 && skillScore >= 60) recommendation = 'APPLY_HIGH_PRIORITY';
+        else if (applicationPriority < 55) recommendation = 'POSSIBLE_MATCH';
+
+        const tierName =
+          job.companyTier === 'STARTUP_EARLY_STAGE' ? 'Early-Stage Startup' :
+          job.companyTier === 'TIER_3_SERVICES' ? 'IT / Engineering Services' :
+          job.companyTier === 'TIER_1_LARGE_CAP' ? 'Tier 1 Enterprise' : 'Mid-Cap Growth';
+
+        const whyApply: string[] = [];
+        if (matchedSkills.length > 0) {
+          whyApply.push(`Match with ${prof.label}: ${matchedSkills.length}/${rawJobSkills.length} key skills (${matchedSkills.slice(0, 4).join(', ')})`);
+        }
+        if (candidateExp >= jobMinExp) {
+          whyApply.push(`Experience on ${prof.label} (${candidateExp} yrs) satisfies requirement (${jobMinExp}+ yrs)`);
+        }
+        whyApply.push(`Company Scale: ${tierName} (${job.companyScale})`);
+
+        const risksAndGaps: string[] = [];
+        if (missingSkills.length > 0) {
+          risksAndGaps.push(`Missing skills for ${prof.label}: ${missingSkills.slice(0, 3).join(', ')}`);
+        }
+        if (candidateExp < jobMinExp) {
+          risksAndGaps.push(`Job prefers ${jobMinExp}+ years of experience (${prof.label} has ${candidateExp} yrs)`);
+        }
+
+        return {
+          profileId: prof.id,
+          profileLabel: prof.label,
+          isPrimary: prof.isPrimary,
+          overallScore,
+          skillScore,
+          experienceScore,
+          roleScore,
+          locationScore,
+          applicationPriority,
+          recommendation,
+          whyApply,
+          risksAndGaps,
+          verdictReason: applicationPriority >= 80
+            ? `High-yield opportunity at ${job.company} (${tierName}) with your ${prof.label}.`
+            : `Moderate match with ${prof.label}.`,
+        };
+      });
+
+      evaluations.sort((a, b) => b.applicationPriority - a.applicationPriority);
+      const alternateProfiles = evaluations.slice(1).map(e => ({
+        profileLabel: e.profileLabel,
+        priorityScore: e.applicationPriority,
+        skillScore: e.skillScore,
+      }));
+
+      for (const ev of evaluations) {
+        await this.prisma.jobMatch.upsert({
+          where: {
+            userId_jobId_profileId: {
+              userId,
+              jobId: job.id,
+              profileId: ev.profileId,
+            },
+          },
+          create: {
+            userId,
+            jobId: job.id,
+            profileId: ev.profileId,
+            matchedProfileLabel: ev.profileLabel,
+            overallScore: ev.overallScore,
+            skillScore: ev.skillScore,
+            experienceScore: ev.experienceScore,
+            roleScore: ev.roleScore,
+            locationScore: ev.locationScore,
+            applicationPriority: ev.applicationPriority,
+            recommendation: ev.recommendation,
+            whyApply: JSON.stringify(ev.whyApply),
+            risksAndGaps: JSON.stringify(ev.risksAndGaps),
+            verdictReason: ev.verdictReason,
+            alternateProfiles: JSON.stringify(alternateProfiles),
+          },
+          update: {
+            matchedProfileLabel: ev.profileLabel,
+            overallScore: ev.overallScore,
+            skillScore: ev.skillScore,
+            experienceScore: ev.experienceScore,
+            roleScore: ev.roleScore,
+            locationScore: ev.locationScore,
+            applicationPriority: ev.applicationPriority,
+            recommendation: ev.recommendation,
+            whyApply: JSON.stringify(ev.whyApply),
+            risksAndGaps: JSON.stringify(ev.risksAndGaps),
+            verdictReason: ev.verdictReason,
+            alternateProfiles: JSON.stringify(alternateProfiles),
+          },
+        });
+      }
+    }
+  }
+
+  async importCustomJob(userId: string, dto: { title: string; company: string; location?: string; workMode?: string; description: string; applyUrl?: string }) {
+    const knownSkills = [
+      'Node.js', 'NestJS', 'Next.js', 'React', 'TypeScript', 'JavaScript', 'Python', 'Go',
+      'Java', 'C++', 'Rust', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'GraphQL', 'REST',
+      'Docker', 'Kubernetes', 'AWS', 'GCP', 'Azure', 'Git', 'CI/CD', 'FastAPI', 'PyTorch', 'AI/ML'
+    ];
+    const extractedSkills = knownSkills.filter(s => {
+      const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b${escaped}\\b`, 'i').test(dto.description);
+    });
+
+    const { tier, scale } = this.classifyCompanyTier(dto.company, dto.description);
+
+    const normalizedJob: NormalizedJob = {
+      externalId: 'custom-' + Date.now(),
+      sourceCode: 'manual',
+      title: dto.title,
+      company: dto.company,
+      location: dto.location || 'Remote',
+      workMode: (dto.workMode as any) || 'REMOTE',
+      employmentType: EmploymentType.FULL_TIME as any,
+      description: dto.description,
+      requiredSkills: extractedSkills.length > 0 ? extractedSkills : ['Engineering'],
+      applyUrl: dto.applyUrl || '#',
+      sourceUrl: dto.applyUrl,
+      postedAt: new Date(),
+    };
+
+    await this.ingestJob(normalizedJob);
+    await this.generateMatchesForUser(userId);
+    return { success: true, message: 'Custom job evaluated across company tiers and role profiles!' };
+  }
+
+  async getUserFeed(userId: string, options?: { tier?: string; hubId?: string }) {
+    const profiles = await this.prisma.candidateProfile.findMany({
+      where: { userId },
+      select: { id: true, label: true, isPrimary: true },
+    });
+    const hasProfile = profiles.length > 0;
+
+    const matchCount = await this.prisma.jobMatch.count({ where: { userId } });
+    if (matchCount === 0) {
+      await this.syncAllSources();
+      await this.generateMatchesForUser(userId);
+    }
+
+    const whereClause: any = { userId, isIgnored: false };
+
+    const rawMatches = await this.prisma.jobMatch.findMany({
+      where: whereClause,
+      orderBy: { applicationPriority: 'desc' },
+      include: {
+        job: {
+          include: {
+            sourcePostings: {
+              include: { source: true },
+            },
+          },
+        },
+      },
+    });
+
+    const seenJobs = new Set<string>();
+    const matches: any[] = [];
+
+    for (const m of rawMatches) {
+      if (seenJobs.has(m.jobId)) continue;
+      if (options?.tier && options.tier !== 'ALL' && m.job.companyTier !== options.tier) continue;
+      if (options?.hubId && options.hubId !== 'ALL') {
+        const loc = m.job.location.toLowerCase();
+        if (!loc.includes(options.hubId.toLowerCase())) continue;
+      }
+      seenJobs.add(m.jobId);
+      matches.push(m);
+    }
+
+    return {
+      hasProfile,
+      profiles,
+      matches: matches.map((m) => ({
+        ...m,
+        whyApply: JSON.parse(m.whyApply || '[]'),
+        risksAndGaps: JSON.parse(m.risksAndGaps || '[]'),
+        alternateProfiles: JSON.parse(m.alternateProfiles || '[]'),
+        job: {
+          ...m.job,
+          requiredSkills: JSON.parse(m.job.requiredSkills || '[]'),
+        },
+      })),
+    };
+  }
+}

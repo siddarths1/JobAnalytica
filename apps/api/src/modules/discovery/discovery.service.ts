@@ -49,7 +49,6 @@ export class DiscoveryService {
       }
     }
 
-    // Automatically recalculate multi-resume matches across candidate profiles!
     await this.jobsService.generateMatchesForUser(userId);
 
     return {

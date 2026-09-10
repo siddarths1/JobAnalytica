@@ -24,7 +24,6 @@ export class FreshnessValidatorService {
     for (const job of jobs) {
       const ageInDays = (now - new Date(job.firstSeenAt).getTime()) / (1000 * 60 * 60 * 24);
 
-      // Stale check
       if (ageInDays > MAX_AGE_DAYS) {
         await this.prisma.canonicalJob.update({
           where: { id: job.id },
@@ -34,7 +33,6 @@ export class FreshnessValidatorService {
         continue;
       }
 
-      // Quick liveness probe for real external URLs
       if (job.primaryApplyUrl && job.primaryApplyUrl.startsWith('http')) {
         try {
           const res = await fetch(job.primaryApplyUrl, {
@@ -42,7 +40,6 @@ export class FreshnessValidatorService {
             signal: AbortSignal.timeout(2500),
           });
 
-          // 404 or 410 Gone indicates closed requisition
           if (res.status === 404 || res.status === 410) {
             await this.prisma.canonicalJob.update({
               where: { id: job.id },
@@ -51,7 +48,7 @@ export class FreshnessValidatorService {
             deactivated++;
           }
         } catch {
-          // Network timeout / bot protection on HEAD is non-fatal
+          // Network timeout / protection is non-fatal
         }
       }
     }

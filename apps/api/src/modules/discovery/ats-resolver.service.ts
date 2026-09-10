@@ -10,7 +10,6 @@ export class AtsResolverService {
   async resolveCompanyJobs(company: TargetCompany): Promise<NormalizedJob[]> {
     const jobs: NormalizedJob[] = [];
 
-    // 1. Try real ATS API if slug is provided
     if (company.atsType === 'greenhouse' && company.atsSlug) {
       try {
         const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${company.atsSlug}/jobs?content=true`, {
@@ -83,7 +82,6 @@ export class AtsResolverService {
       }
     }
 
-    // 2. Fallback to Verified Active Target Company Catalog Roles
     if (jobs.length === 0 && company.sampleRoles && company.sampleRoles.length > 0) {
       for (let idx = 0; idx < company.sampleRoles.length; idx++) {
         const role = company.sampleRoles[idx];

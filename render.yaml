@@ -46,10 +46,11 @@ services:
     rootDir: .
     buildCommand: pnpm install --no-frozen-lockfile && pnpm --filter @jobanalytica/shared-types build && pnpm --filter web build
     startCommand: pnpm --filter web start
+    healthCheckPath: /
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 3000
+        value: 10000
       - key: NEXT_PUBLIC_API_URL
         value: https://jobanalytica-api.onrender.com/api/v1

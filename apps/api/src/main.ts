@@ -13,8 +13,22 @@ async function bootstrap() {
   app.use(cookieParser());
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'https://jobanalytica-web.onrender.com'],
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin) return callback(null, true);
+      const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : [];
+      if (
+        envOrigins.includes('*') ||
+        envOrigins.includes(requestOrigin) ||
+        requestOrigin.includes('onrender.com') ||
+        requestOrigin.includes('localhost')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'X-Requested-With'],
   });
 
   app.setGlobalPrefix('api/v1');
